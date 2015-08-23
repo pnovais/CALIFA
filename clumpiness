@@ -1,0 +1,397 @@
+program bina
+      implicit none
+      INTEGER i,ndatasn,h_err
+      INTEGER nc,npbx, npby,nt
+      integer, parameter::nmax=3100000, npmax=2048, nmmax=10000,nm=200000
+      parameter(nc=928, npbx= 80,npby=80, nt=6400) !nc # de linhas da imagem
+      INTEGER xaux(nc), yaux(nc),xj,yj,j,l,nn
+      real,dimension(4,nc):: P
+      REAL C3(nc),C4(nc),C5(nc),C6(nc),C7(nc)
+      INTEGER:: countf(npbx,npby),ntt,np,n,k,iclio,icljo,kmax,iclmax,nct
+      real,dimension(3,nt):: S
+      LOGICAL pontoencontrado/.FALSE./ !Encontrou um ponto na figura???
+      real x(nm),y(nm),z(nm)
+      integer icl(nmmax),itipo(nmmax),hist(nmmax),image(npmax,npmax),ii
+      real xx(nm),yy(nm),d
+
+      open(1, file='pop1_ngc6125.txt',status='old')
+      open(2, file='output.txt',status='unknown')
+
+    
+         read(1,*) P
+
+!       do i=1,5
+ !           write(*,*) P(1,i),P(2,i)
+ !     enddo    
+
+
+nn=0
+
+do 10 yj=npby,1,-1
+      do 12 xj=npbx,1,-1
+            pontoencontrado=.false.
+                  nn=nn+1
+    		  itipo(nn)=0
+            do 14 i =1,nc
+                  if(xj.eq.P(1,i).and.yj.eq.P(2,i))then
+                        pontoencontrado=.true.
+                  endif
+14         enddo
+              if(pontoencontrado)then
+                  countf(xj,yj)=1
+		  write(2,*)xj,yj, 1
+         	  itipo(nn)=1
+              else
+                  countf(xj,yj)=0                    
+		  write(2,*)xj,yj, 0
+              endif
+
+
+12    enddo
+!write(2,*)
+10 enddo
+
+do j=1,npby
+   l=npby-j+1
+   write(3,'(100i1)') (countf(i,l),i=1,npbx)
+enddo
+
+
+
+
+      write(*,*)'FOF/Laerte'
+
+      ntt=npbx*npby
+      if(ntt.gt.nm)then
+         write(*,*)' FoF: NPIX > NMAX!',ntt,nm
+         stop
+      endif 
+
+      np=0 
+      n=0
+      do i=1,npbx
+        do j=1,npby
+           np=np+1
+           if(countf(i,j).eq.1)then
+           n=n+1 
+           x(n)=i
+           y(n)=j
+           icl(n)=n
+           endif
+        enddo
+      enddo 
+      write(*,*)'no. total de pixels: ',np
+      write(*,*) 'no. de pixels acima do limiar: ',n
+
+      do i=1,n
+         do j=1,n
+            call  distancia(x(i),y(i),x(j),y(j),d)
+!     se d=1 os pixels i e j sao conexos
+            if(d.eq.1.)then
+!     se ambos os pixels ja pertencem a algum objeto, atribuem-se os
+!     dois ao objeto de menor numero de identificacao: ii
+                  ii=min(icl(i),icl(j))
+                  iclio=icl(i)
+                  icljo=icl(j)
+                  icl(i)=ii
+                  icl(j)=ii
+!     aos demais pixels dos dois objetos se atribui a mesma identificacao ii
+                  do k=1,n
+                     if(icl(k).eq.iclio.or.icl(k).eq.icljo)icl(k)=ii
+                  enddo
+            endif
+         enddo
+      enddo  
+
+!     determinacao do numero de objetos resultantes
+      do k=1,n
+         hist(k)=0
+      enddo  
+      do k=1,n
+         l=icl(k)
+         hist(l)=hist(l)+1
+      enddo  
+      nct=0
+      kmax=0
+      do k=1,n
+         if(hist(k).gt.0)then
+            nct=nct+1
+            write(*,*)nct,hist(k)
+            kmax=max(kmax,hist(k))
+            if(hist(k).eq.kmax)iclmax=k
+         endif   
+      enddo 
+      write(*,*)'n_objetos = ',nct,'  npix do maior objeto: ',kmax
+      write(*,*)   '  ident. do maior objeto: ',iclmax
+
+
+
+!call fof2(npbx,npby,countf,itipo)
+
+
+
+close(1)
+close(2)
+
+stop 
+end program
+
+
+!========================================================================
+!==============================SUBROTINAS================================
+!========================================================================
+
+
+!========================================================================
+
+      subroutine fof2(npbx,npby,image,itipo)
+!     fof problem:
+!     Let us define objects as as a set of conected pixels of at least NCMIN
+!     members, where each member has at least one neighbor from
+!     the same group (friend). Given a segmented image, finds the objects in
+!     the image (clusters of pixels).
+!     laerte 30/03/2008  following Szapudi
+!     revisao 090313
+!
+!     posicoes das galaxias: x(n),y(n)
+!     imagem segmentada: image(i,j) = z(n)  pixels com valores 0 ou 1
+!     icl(n): icl=0 se o pixel e' isolado; icl= no. do objeto a que ele
+!             pertence
+
+      parameter(nmax=10000,nm=200000,npmax=2048)
+      real x(nm),y(nm),z(nm)
+      integer icl(nmax),itipo(nmax),hist(nmax),image(npmax,npmax)
+      real xx(nm),yy(nm)
+
+
+      write(2,*)'FOF/Laerte'
+
+      nt=npbx*npby
+      if(nt.gt.nm)then
+         write(2,*)' FoF: NPIX > NMAX!',nt,nm
+         stop
+      endif  
+!     cria vetores com coordenadas dos pixels acima do limiar
+!     e atribui um objeto a cada um
+!     icl(i) e' a identificacao do objeto ao qual pertence o pixel i
+!     pixel abaixo do limiar: itipo=0 acima: itipo=1
+!     n: no. de pixels acima do limiar
+      np=0 
+      n=0
+      do i=1,npbx
+        do j=1,npby
+           np=np+1
+           if(image(i,j).eq.1)then
+           n=n+1 
+           x(n)=i
+           y(n)=j
+           icl(n)=n
+           endif
+        enddo
+      enddo 
+      write(2,*)'no. total de pixels: ',np
+      write(2,*) 'no. de pixels acima do limiar: ',n
+
+!     analisa a vizinhanca de cada pixel e redefine seu objeto
+!     relacao entre os pixels: analisa um par de pixels de cada vez
+!      do i=1,n-1
+!         do j=i+1,n
+      do i=1,n
+         do j=1,n
+            call  distancia(x(i),y(i),x(j),y(j),d)
+!     se d=1 os pixels i e j sao conexos
+            if(d.eq.1.)then
+!     se ambos os pixels ja pertencem a algum objeto, atribuem-se os
+!     dois ao objeto de menor numero de identificacao: ii
+                  ii=min(icl(i),icl(j))
+                  iclio=icl(i)
+                  icljo=icl(j)
+                  icl(i)=ii
+                  icl(j)=ii
+!     aos demais pixels dos dois objetos se atribui a mesma identificacao ii
+                  do k=1,n
+                     if(icl(k).eq.iclio.or.icl(k).eq.icljo)icl(k)=ii
+                  enddo
+            endif
+         enddo
+      enddo  
+
+!     determinacao do numero de objetos resultantes
+      do k=1,n
+         hist(k)=0
+      enddo  
+      do k=1,n
+         l=icl(k)
+         hist(l)=hist(l)+1
+      enddo  
+      nct=0
+      kmax=0
+      do k=1,n
+         if(hist(k).gt.0)then
+            nct=nct+1
+            write(2,*)nct,hist(k)
+            kmax=max(kmax,hist(k))
+            if(hist(k).eq.kmax)iclmax=k
+         endif   
+      enddo 
+      write(2,*)'n_objetos = ',nct,'  npix do maior objeto: ',kmax
+      write(2,*)   '  ident. do maior objeto: ',iclmax
+
+!     cria a imagem segmentada do maior objeto
+      k=0
+      do i=1,n
+         ii=x(i)
+         jj=y(i)
+         image(ii,jj)=0
+         if(icl(i).eq.iclmax)then
+            image(ii,jj)=2
+            k=k+1
+!          xx(k)=x(i)
+!          yy(k)=y(i)
+         endif   
+      enddo
+      write(2,*)k
+!      call plota(k,xx,yy)
+      end
+
+!========================================================================
+
+      subroutine distancia(x,y,xl,yl,d)
+!     pixels contiguos com z=zl=1: os 8 com d<=sqrt(2) -> d=1
+!     dm2=1.5**2
+      parameter(dm2=2.25)
+      d=0.
+      dist2=(x-xl)**2+(y-yl)**2
+      if(dist2.le.dm2)d=1.
+      return
+      end
+
+!========================================================================
+
+      subroutine percentis(x,n,alfa,xmin,xmax,xinf,xmed,xsup)
+!     percentis alfa (0.-50.) de x(n)
+!     alfa=25 -> quartis
+!     saida: percentil inferior, mediana e percentil superior
+      parameter(nmax=100000)
+      real x(n),xx(nmax)
+      integer indx(nmax)
+
+      if(n.gt.nmax)then
+         write(*,*)' n > nmax!!! aumente nmax! '
+         stop
+      endif   
+      if(alfa.ge.50..or.alfa.le.0.)then
+         write(*,*)'alfa=',alfa,'     alfa: 0<alfa<50!!! '
+         stop
+      endif   
+
+      call indexx(n,x,indx)
+      xmin=x(indx(1))
+      xmax=x(indx(n))
+      ip=0
+      ip25=0
+      ip75=0
+      n2=n/2
+      ninf=n*alfa/100.
+      nsup=n*(100.-alfa)/100.
+      if(2*n2.eq.n)ip=1
+      if((100.*ninf/alfa).eq.n)ipinf=1
+      if((100.*nsup/(100.-alfa)).eq.n)ipsup=1
+      if(ip.eq.1)then
+         xmed=0.5*(x(indx(n2))+x(indx(n2+1)))        
+      else
+         xmed=x(indx(n2+1))
+      endif   
+      if(ipinf.eq.1)then
+         xinf=0.5*(x(indx(ninf))+x(indx(ninf+1)))        
+      else
+         xinf=x(indx(ninf+1))
+      endif    
+      if(ipsup.eq.1)then
+         xsup=0.5*(x(indx(nsup))+x(indx(nsup+1)))        
+      else
+         xsup=x(indx(nsup+1))
+      endif  
+      return
+      end
+
+!======================================================================== 
+      SUBROUTINE indexx(n,arr,indx)
+      INTEGER n,indx(n),M,NSTACK
+      REAL arr(n)
+      PARAMETER (M=7,NSTACK=50)
+      INTEGER i,indxt,ir,itemp,j,jstack,k,l,istack(NSTACK)
+      REAL a
+      do 11 j=1,n
+        indx(j)=j
+11    continue
+      jstack=0
+      l=1
+      ir=n
+1     if(ir-l.lt.M)then
+        do 13 j=l+1,ir
+          indxt=indx(j)
+          a=arr(indxt)
+          do 12 i=j-1,1,-1
+            if(arr(indx(i)).le.a)goto 2
+            indx(i+1)=indx(i)
+12        continue
+          i=0
+2         indx(i+1)=indxt
+13      continue
+        if(jstack.eq.0)return
+        ir=istack(jstack)
+        l=istack(jstack-1)
+        jstack=jstack-2
+      else
+        k=(l+ir)/2
+        itemp=indx(k)
+        indx(k)=indx(l+1)
+        indx(l+1)=itemp
+        if(arr(indx(l+1)).gt.arr(indx(ir)))then
+          itemp=indx(l+1)
+          indx(l+1)=indx(ir)
+          indx(ir)=itemp
+        endif
+        if(arr(indx(l)).gt.arr(indx(ir)))then
+          itemp=indx(l)
+          indx(l)=indx(ir)
+          indx(ir)=itemp
+        endif
+        if(arr(indx(l+1)).gt.arr(indx(l)))then
+          itemp=indx(l+1)
+          indx(l+1)=indx(l)
+          indx(l)=itemp
+        endif
+        i=l+1
+        j=ir
+        indxt=indx(l)
+        a=arr(indxt)
+3       continue
+          i=i+1
+        if(arr(indx(i)).lt.a)goto 3
+4       continue
+          j=j-1
+        if(arr(indx(j)).gt.a)goto 4
+        if(j.lt.i)goto 5
+        itemp=indx(i)
+        indx(i)=indx(j)
+        indx(j)=itemp
+        goto 3
+5       indx(l)=indx(j)
+        indx(j)=indxt
+        jstack=jstack+2
+        if(jstack.gt.NSTACK)write(*,*) 'NSTACK too small in indexx'
+        if(ir-i+1.ge.j-l)then
+          istack(jstack)=ir
+          istack(jstack-1)=i
+          ir=j-1
+        else
+          istack(jstack)=j-1
+          istack(jstack-1)=l
+          l=i
+        endif
+      endif
+      goto 1
+      END
+!  (C) Copr. 1986-92 Numerical Recipes Software YLu.
